@@ -1,0 +1,187 @@
+{% extends "base.html" %}
+{% block title %}空间站交易 · EVE 终端{% endblock %}
+
+{% block content %}
+
+<h1>空间站交易终端</h1>
+<p style="font-family:var(--font-mono);font-size:0.8rem;color:var(--text-dim);margin-top:-0.5rem;margin-bottom:1.5rem;">
+    同一空间站内低买高卖，追踪每笔交易利润
+</p>
+
+<div x-data="tradingApp()" x-init="loadTrades(); loadSummary()">
+
+<!-- ====== New Trade Form ====== -->
+<h2>◈ 新建追踪交易</h2>
+<form @submit.prevent="createTrade" style="position:relative;">
+    <input type="hidden" name="type_id" x-model="selectedId">
+    <div class="grid">
+        <label>
+            物品名称
+            <div style="position:relative;">
+                <input type="text" placeholder="搜索物品..." autocomplete="off"
+                       x-model="itemQuery" @input.debounce.200ms="searchItem"
+                       @focus="if(itemResults.length) itemOpen = true"
+                       @keydown.escape="itemOpen = false">
+                <div x-show="itemOpen && itemResults.length" @click.outside="itemOpen = false"
+                     style="position:absolute;top:100%;left:0;right:0;z-index:60;
+                            background:var(--bg-card);border:1px solid var(--border-accent);
+                            border-radius:var(--radius-sm);max-height:200px;overflow-y:auto;
+                            box-shadow:0 8px 24px rgba(0,0,0,0.5);">
+                    <template x-for="item in itemResults" :key="item.type_id">
+                        <div @click="selectItem(item)" style="padding:0.45rem 0.7rem;cursor:pointer;
+                                    border-bottom:1px solid var(--border-subtle);"
+                             @mouseenter="$el.style.background='var(--bg-hover)'"
+                             @mouseleave="$el.style.background='transparent'">
+                            <span x-text="item.name" style="font-size:0.85rem;"></span>
+                            <span x-text="'ID:'+item.type_id" style="font-size:0.65rem;color:var(--text-dim);margin-left:0.5rem;"></span>
+                        </div>
+                    </template>
+                </div>
+            </div>
+            <span x-show="selectedName" style="color:var(--gold);font-size:0.7rem;" x-text="'已选: ' + selectedName"></span>
+        </label>
+        <label>
+            星域/空间站
+            <select x-model="form.region_id" @change="setStation">
+                <option value="10000002">Jita · The Forge (60003760)</option>
+                <option value="10000043">Amarr · Domain (60008494)</option>
+                <option value="10000032">Dodixie · Sinq Laison (60011866)</option>
+                <option value="10000030">Rens · Heimatar (60004588)</option>
+                <option value="10000042">Hek · Metropolis (60005686)</option>
+            </select>
+        </label>
+        <label>
+            买入价 ISK
+            <input type="number" x-model="form.buy_price" step="0.01" min="0" placeholder="挂买单价格">
+        </label>
+        <label>
+            卖出价 ISK
+            <input type="number" x-model="form.sell_price" step="0.01" min="0" placeholder="挂卖单价格">
+        </label>
+        <label>
+            数量
+            <input type="number" x-model="form.quantity" min="1" placeholder="交易数量">
+        </label>
+        <label>
+            备注
+            <input type="text" x-model="form.notes" placeholder="可选">
+        </label>
+        <button type="submit" style="align-self:flex-end;" :disabled="!canCreate">
+            开始追踪
+        </button>
+    </div>
+    <p x-show="error" x-text="error" style="color:var(--loss);font-size:0.75rem;margin-top:0.5rem;"></p>
+    <p x-show="success" x-text="success" style="color:var(--profit);font-size:0.75rem;margin-top:0.5rem;"></p>
+</form>
+
+<!-- ====== Trade Summary ====== -->
+<h2>◈ 交易汇总</h2>
+<div class="grid">
+    <article>
+        <h5>▸ 总交易</h5>
+        <p x-text="summary.total_trades || '—'"></p>
+    </article>
+    <article>
+        <h5>▸ 进行中</h5>
+        <p x-text="summary.active_trades || '—'" style="color:var(--cyan);text-shadow:var(--glow-cyan);"></p>
+    </article>
+    <article>
+        <h5>▸ 已完成</h5>
+        <p x-text="summary.completed_trades || '—'" style="color:var(--profit);text-shadow:var(--glow-profit);"></p>
+    </article>
+    <article>
+        <h5>▸ 总利润</h5>
+        <p x-text="formatISK(summary.total_profit)" :style="'color:'+(summary.total_profit>=0?'var(--profit)':'var(--loss)')"></p>
+        <small x-text="'投入: ' + formatISK(summary.total_investment)"></small>
+    </article>
+</div>
+
+<!-- ====== Tracked Trades ====== -->
+<h2>◈ 已追踪交易</h2>
+<div class="overflow-auto">
+    <table>
+        <thead>
+            <tr>
+                <th>物品</th>
+                <th>买入价</th>
+                <th>卖出价</th>
+                <th>数量</th>
+                <th>状态</th>
+                <th>利润</th>
+                <th>利润率</th>
+                <th>备注</th>
+                <th>操作</th>
+            </tr>
+        </thead>
+        <tbody>
+            <template x-for="t in trades" :key="t.id">
+                <tr :style="t.status==='completed'?'opacity:0.6':'opacity:1'">
+                    <td>
+                        <span x-text="t.type_id" style="font-family:var(--font-mono);font-size:0.7rem;color:var(--text-dim);"></span>
+                    </td>
+                    <td x-text="formatISK(t.buy_price)"></td>
+                    <td x-text="formatISK(t.sell_price)"></td>
+                    <td x-text="t.volume_remaining + '/' + t.quantity"></td>
+                    <td>
+                        <span x-text="statusLabel(t.status)"
+                              :style="'color:'+statusColor(t.status)+';font-family:var(--font-display);font-size:0.65rem;letter-spacing:0.05em;'"></span>
+                    </td>
+                    <td :class="(t.net_profit||0) >= 0 ? 'profit' : 'loss'"
+                        x-text="formatISK(t.net_profit)"></td>
+                    <td :class="(t.profit_margin||0) >= 0 ? 'profit' : 'loss'"
+                        x-text="t.profit_margin ? (t.profit_margin*100).toFixed(1)+'%' : '—'"></td>
+                    <td x-text="t.notes || '—'" style="max-width:120px;overflow:hidden;text-overflow:ellipsis;"></td>
+                    <td>
+                        <button @click="completeTrade(t.id)" x-show="t.status==='active'"
+                                style="font-size:0.6rem;padding:0.2rem 0.5rem;margin-right:0.25rem;">完成</button>
+                        <button @click="cancelTrade(t.id)" x-show="t.status==='active'"
+                                style="font-size:0.6rem;padding:0.2rem 0.5rem;color:var(--loss);border-color:var(--loss);">取消</button>
+                        <span x-show="t.status!=='active'" style="font-size:0.65rem;color:var(--text-dim);">—</span>
+                    </td>
+                </tr>
+            </template>
+            <tr x-show="!trades.length">
+                <td colspan="9" style="text-align:center;color:var(--text-dim);padding:2rem;">
+                    暂无追踪交易 — 在上方创建第一笔
+                </td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+
+<!-- ====== Opportunity Discovery ====== -->
+<h2>◈ 差价扫描</h2>
+<form hx-get="/api/v1/trading/opportunities" hx-target="#trading-results" hx-swap="innerHTML">
+    <div class="grid">
+        <label>
+            星域
+            <select name="region_id">
+                <option value="10000002">Jita · The Forge</option>
+                <option value="10000043">Amarr · Domain</option>
+                <option value="10000032">Dodixie · Sinq Laison</option>
+                <option value="10000030">Rens · Heimatar</option>
+                <option value="10000042">Hek · Metropolis</option>
+            </select>
+        </label>
+        <label>
+            最低差价 %
+            <input type="number" name="min_margin" value="10" step="0.5" min="0">
+        </label>
+        <label>
+            最大投入 ISK
+            <input type="number" name="max_investment" placeholder="留空=不限">
+        </label>
+        <label>
+            排序
+            <select name="sort_by">
+                <option value="potential_profit">潜在利润</option>
+                <option value="margin">差价 %</option>
+            </select>
+        </label>
+        <button type="submit" style="align-self:flex-end;">扫描</button>
+    </div>
+</form>
+<div id="trading-results" class="overflow-auto"></div>
+
+</div>
+{% endblock %}

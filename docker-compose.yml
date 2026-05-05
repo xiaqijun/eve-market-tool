@@ -1,0 +1,46 @@
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-eve_market}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-eve_market_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-eve_market}
+    ports:
+      - "127.0.0.1:${DB_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-eve_market}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-eve_market}:${POSTGRES_PASSWORD:-eve_market_dev}@db:5432/${POSTGRES_DB:-eve_market}
+      ESI_USER_AGENT: ${ESI_USER_AGENT}
+      ESI_BASE_URL: ${ESI_BASE_URL:-https://esi.evetech.net/latest}
+      SECRET_KEY: ${SECRET_KEY}
+      EVE_CLIENT_ID: ${EVE_CLIENT_ID:-}
+      EVE_CLIENT_SECRET: ${EVE_CLIENT_SECRET:-}
+      EVE_CALLBACK_URL: ${EVE_CALLBACK_URL:-}
+      SCHEDULER_ENABLED: "true"
+      MARKET_FETCH_INTERVAL_MINUTES: ${MARKET_FETCH_INTERVAL_MINUTES:-5}
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  pgdata:

@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+*.pyo
+.env
+.venv/
+.pytest_cache/
+eve_market_tool.egg-info/
+uv.lock
+sde.sqlite*
+*.bz2
+.claude/
+.idea/
+.vscode/
+*.log

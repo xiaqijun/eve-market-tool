@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}跨区套利 · EVE 终端{% endblock %}
+
+{% block content %}
+
+<h1>跨区套利引擎</h1>
+<p style="font-family:var(--font-mono);font-size:0.8rem;color:var(--text-dim);margin-top:-0.5rem;margin-bottom:1.5rem;">
+    比较五大贸易中心价格，发现低买高卖机会
+</p>
+
+<!-- Item Price Comparison -->
+<h2>◈ 物品跨区比价</h2>
+<form hx-get="/api/v1/arbitrage/items/0/comparison" hx-target="#comparison-result" hx-swap="innerHTML"
+      x-data="itemPicker()"
+      @submit="if (!selectedId) { $event.preventDefault(); return; }
+               $el.setAttribute('hx-get', '/api/v1/arbitrage/items/' + selectedId + '/comparison')">
+    <div class="grid">
+        <div style="position:relative;">
+            <input type="text" placeholder="输入物品名称搜索..." autocomplete="off"
+                   x-model="query" @input.debounce.200ms="search"
+                   @focus="if(results.length) open = true"
+                   @keydown.escape="open = false"
+                   style="font-size:0.9rem;padding:0.6rem 0.8rem;width:100%;">
+            <!-- Dropdown -->
+            <div x-show="open && results.length" @click.outside="open = false"
+                 style="position:absolute;top:100%;left:0;right:0;z-index:50;
+                        background:var(--bg-card);border:1px solid var(--border-accent);
+                        border-radius:var(--radius-sm);max-height:260px;overflow-y:auto;
+                        box-shadow:0 8px 24px rgba(0,0,0,0.5);">
+                <template x-for="item in results" :key="item.type_id">
+                    <div @click="select(item)" style="padding:0.5rem 0.75rem;cursor:pointer;
+                                border-bottom:1px solid var(--border-subtle);
+                                display:flex;justify-content:space-between;align-items:center;
+                                transition:background 0.1s;"
+                         @mouseenter="$el.style.background='var(--bg-hover)'"
+                         @mouseleave="$el.style.background='transparent'">
+                        <span x-text="item.name" style="font-family:var(--font-body);font-size:0.9rem;color:var(--text-primary);"></span>
+                        <span x-text="item.type_id" style="font-family:var(--font-mono);font-size:0.7rem;color:var(--text-dim);"></span>
+                    </div>
+                </template>
+            </div>
+            <!-- Loading -->
+            <div x-show="loading" style="position:absolute;top:100%;left:0;right:0;z-index:50;
+                     background:var(--bg-card);border:1px solid var(--border-accent);
+                     border-radius:var(--radius-sm);padding:0.75rem;text-align:center;
+                     color:var(--text-dim);font-family:var(--font-mono);font-size:0.8rem;">
+                搜索中...
+            </div>
+            <!-- No results -->
+            <div x-show="open && !loading && query && !results.length"
+                 style="position:absolute;top:100%;left:0;right:0;z-index:50;
+                        background:var(--bg-card);border:1px solid var(--border-subtle);
+                        border-radius:var(--radius-sm);padding:0.75rem;text-align:center;
+                        color:var(--text-dim);font-family:var(--font-mono);font-size:0.8rem;">
+                未找到匹配物品
+            </div>
+        </div>
+        <button type="submit">查询比价</button>
+    </div>
+    <p x-show="selectedId" style="font-family:var(--font-mono);font-size:0.75rem;color:var(--gold);margin:0.25rem 0 0 0;">
+        已选: <span x-text="selectedName"></span> (Type ID: <span x-text="selectedId"></span>)
+    </p>
+</form>
+<div id="comparison-result"></div>
+
+<!-- Arbitrage Opportunities -->
+<h2>◈ 套利机会扫描</h2>
+<form hx-get="/api/v1/arbitrage/opportunities" hx-target="#opportunities-table" hx-trigger="submit, load delay:100ms">
+    <div class="grid">
+        <label>
+            最低利润率 %
+            <input type="number" name="min_profit_margin" value="5" step="0.5" min="0">
+        </label>
+        <label>
+            最低利润 ISK
+            <input type="number" name="min_profit_isk" value="1000000" min="0">
+        </label>
+        <label>
+            排序
+            <select name="sort_by">
+                <option value="total_profit">总利润</option>
+                <option value="profit_margin">利润率</option>
+            </select>
+        </label>
+        <button type="submit" style="align-self:flex-end;">筛选</button>
+    </div>
+</form>
+
+<div id="opportunities-table" class="overflow-auto">
+    <p aria-busy="true">扫描套利机会中...</p>
+</div>
+
+{% endblock %}

@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}EVE 市场终端{% endblock %}</title>
+    <link rel="stylesheet" href="/static/css/app.css">
+    <script src="/static/js/app.js"></script>
+    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.9/dist/cdn.min.js"></script>
+</head>
+<body>
+    <header>
+        <div class="container">
+            <strong><a href="/">◈ EVE 市场终端</a></strong>
+            <nav>
+                <a href="/">看板</a>
+                <a href="/arbitrage">跨区套利</a>
+                <a href="/trading">空间站交易</a>
+                <a href="/manufacturing">制造分析</a>
+                <a href="/alerts">价格提醒</a>
+                <a href="/docs" target="_blank">API ▸</a>
+            </nav>
+        </div>
+    </header>
+
+    <main class="container">
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer>
+        <div class="container">
+            EVE 市场终端 v0.1.0 &nbsp;·&nbsp;
+            EVE Online 相关商标归 CCP Games 所有
+        </div>
+    </footer>
+</body>
+</html>

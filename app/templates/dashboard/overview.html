@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+{% block title %}市场看板 · EVE 终端{% endblock %}
+
+{% block content %}
+
+<div x-data="{ overview: {} }" x-init="fetch('/api/v1/dashboard/overview').then(r => r.json()).then(d => overview = d)">
+
+<!-- Header -->
+<h1>市场看板</h1>
+<p style="font-family:var(--font-mono);font-size:0.8rem;color:var(--text-dim);margin-top:-0.5rem;margin-bottom:1.5rem;">
+    <span x-show="overview.last_updated" x-text="'最后同步: ' + overview.last_updated">最后同步: —</span>
+    <span x-show="!overview.last_updated">等待数据同步...</span>
+</p>
+
+<!-- Stats Cards -->
+<div class="grid">
+    <article>
+        <h5>▸ 活跃订单</h5>
+        <p x-text="overview.total_active_orders?.toLocaleString() || '—'">—</p>
+        <small x-text="(overview.buy_orders || 0).toLocaleString() + ' 买 / ' + (overview.sell_orders || 0).toLocaleString() + ' 卖'"></small>
+    </article>
+    <article>
+        <h5>▸ 挂单总额</h5>
+        <p x-text="formatISK(overview.total_isk_in_orders)">—</p>
+    </article>
+    <article>
+        <h5>▸ 追踪星域</h5>
+        <p x-text="overview.region_summaries?.length || '—'">—</p>
+        <small>Jita · Amarr · Dodixie · Rens · Hek</small>
+    </article>
+    <article>
+        <h5>▸ 套利机会</h5>
+        <p x-text="overview.top_arbitrage?.length || '—'">—</p>
+        <small>利润率 > 5%</small>
+    </article>
+</div>
+
+<!-- Region Breakdown -->
+<h2>◈ 星域概况</h2>
+<div class="overflow-auto">
+    <table>
+        <thead>
+            <tr>
+                <th>星域</th>
+                <th>订单总数</th>
+                <th>买单</th>
+                <th>卖单</th>
+                <th>挂单总额</th>
+            </tr>
+        </thead>
+        <tbody>
+            <template x-for="r in overview.region_summaries" :key="r.region_id">
+                <tr>
+                    <td x-text="r.region_name" style="color:var(--gold);font-family:var(--font-display);font-size:0.7rem;letter-spacing:0.05em;"></td>
+                    <td x-text="r.order_count?.toLocaleString()"></td>
+                    <td x-text="r.buy_count?.toLocaleString()"></td>
+                    <td x-text="r.sell_count?.toLocaleString()"></td>
+                    <td x-text="formatISK(r.total_isk)" style="color:var(--cyan)"></td>
+                </tr>
+            </template>
+            <tr x-show="!overview.region_summaries?.length">
+                <td colspan="5" style="text-align:center;color:var(--text-dim);padding:2rem;">暂无数据 — 后台正在从 ESI 拉取市场数据</td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+
+<!-- Top Arbitrage -->
+<h2>◈ 最佳套利机会</h2>
+<div class="overflow-auto">
+    <table>
+        <thead>
+            <tr>
+                <th>物品名称</th>
+                <th>低价星域</th>
+                <th>高价星域</th>
+                <th>买入价</th>
+                <th>卖出价</th>
+                <th>利润率</th>
+                <th>预估利润</th>
+            </tr>
+        </thead>
+        <tbody>
+            <template x-for="a in overview.top_arbitrage" :key="a.id">
+                <tr>
+                    <td x-text="a.item_name"></td>
+                    <td x-text="a.buy_region_name" style="color:var(--loss)"></td>
+                    <td x-text="a.sell_region_name" style="color:var(--profit)"></td>
+                    <td x-text="formatISK(a.buy_price)"></td>
+                    <td x-text="formatISK(a.sell_price)"></td>
+                    <td>
+                        <span x-text="(a.profit_margin * 100).toFixed(1) + '%'"
+                              :class="a.profit_margin >= 0.1 ? 'profit' : ''"></span>
+                    </td>
+                    <td x-text="formatISK(a.total_profit)" class="profit"></td>
+                </tr>
+            </template>
+            <tr x-show="!overview.top_arbitrage?.length">
+                <td colspan="7" style="text-align:center;color:var(--text-dim);padding:2rem;">暂无套利机会 — 等待市场数据</td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+
+<!-- Hot Items -->
+<h2>◈ 热门异动</h2>
+<p style="font-family:var(--font-mono);font-size:0.7rem;color:var(--text-dim);margin-bottom:0.5rem;">
+    对比当前与 12 小时前买卖单总量变化，红色=供给减少，绿色=供给增加
+</p>
+<div class="overflow-auto">
+    <table>
+        <thead>
+            <tr>
+                <th>物品名称</th>
+                <th>星域</th>
+                <th>总量变动</th>
+                <th>当前 买/卖</th>
+                <th>12h 前 买/卖</th>
+            </tr>
+        </thead>
+        <tbody>
+            <template x-for="h in overview.hot_items" :key="h.type_id + '_' + h.region_id">
+                <tr>
+                    <td x-text="h.item_name"></td>
+                    <td x-text="h.region_name"></td>
+                    <td>
+                        <span x-text="h.volume_change_pct.toFixed(1) + '%'"
+                              :class="h.volume_change_pct >= 0 ? 'profit' : 'loss'"></span>
+                    </td>
+                    <td>
+                        <span x-text="formatVolume(h.buy_vol) || '—'" style="color:var(--cyan)"></span>
+                        <span style="color:var(--text-dim);margin:0 2px;">/</span>
+                        <span x-text="formatVolume(h.sell_vol) || '—'" style="color:var(--gold)"></span>
+                    </td>
+                    <td>
+                        <span x-text="formatVolume(h.prev_buy_vol) || '—'" style="color:var(--cyan)"></span>
+                        <span style="color:var(--text-dim);margin:0 2px;">/</span>
+                        <span x-text="formatVolume(h.prev_sell_vol) || '—'" style="color:var(--gold)"></span>
+                    </td>
+                </tr>
+            </template>
+            <tr x-show="!overview.hot_items?.length">
+                <td colspan="5" style="text-align:center;color:var(--text-dim);padding:2rem;">暂无数据</td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+
+</div>
+{% endblock %}

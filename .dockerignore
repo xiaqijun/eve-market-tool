@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+*.pyo
+.env
+.env.example
+.env.production
+.git/
+.gitignore
+.pytest_cache/
+eve_market_tool.egg-info/
+.venv/
+uv.lock
+*.md
+!README.md
+tests/
+deploy.sh
