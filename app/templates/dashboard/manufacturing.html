@@ -101,10 +101,10 @@
 
 <!-- Price Trend -->
 <h2>◈ 价格趋势图</h2>
-<form hx-get="/api/v1/dashboard/trends/0" hx-target="#chart-container" hx-swap="innerHTML"
+<form hx-get="/api/v1/dashboard/trends/0/chart" hx-target="#chart-container" hx-swap="innerHTML"
       x-data="itemPicker()"
       @submit="if (!selectedId) { $event.preventDefault(); return; }
-               $el.setAttribute('hx-get', '/api/v1/dashboard/trends/' + selectedId + '?region_id=' + $el.querySelector('select').value)">
+               $el.setAttribute('hx-get', '/api/v1/dashboard/trends/' + selectedId + '/chart?region_id=' + $el.querySelector('select').value)">
     <div class="grid">
         <label>
             物品名称

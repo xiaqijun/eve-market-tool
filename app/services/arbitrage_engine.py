@@ -184,28 +184,43 @@ class ArbitrageEngine:
     async def get_opportunities(
         self,
         limit: int = 50,
+        offset: int = 0,
         min_margin: float = 0.0,
         min_profit: float = 0.0,
         region_id: int | None = None,
         sort_by: str = "total_profit",
-    ) -> list[dict]:
-        """Query stored arbitrage opportunities."""
-        from sqlalchemy import desc, select
+    ) -> tuple[list[dict], int]:
+        """Query stored arbitrage opportunities with DB-level pagination.
+
+        Returns (items, total_count).
+        """
+        from sqlalchemy import desc, func, select
 
         from app.models.trading import ArbitrageOpportunity
 
-        stmt = select(ArbitrageOpportunity)
+        base_filters = []
         if min_margin > 0:
-            stmt = stmt.where(ArbitrageOpportunity.profit_margin >= min_margin)
+            base_filters.append(ArbitrageOpportunity.profit_margin >= min_margin)
         if min_profit > 0:
-            stmt = stmt.where(ArbitrageOpportunity.total_profit >= min_profit)
+            base_filters.append(ArbitrageOpportunity.total_profit >= min_profit)
         if region_id is not None:
-            stmt = stmt.where(
+            base_filters.append(
                 (ArbitrageOpportunity.buy_region_id == region_id)
                 | (ArbitrageOpportunity.sell_region_id == region_id)
             )
+
+        # Count query
+        count_stmt = select(func.count()).select_from(ArbitrageOpportunity)
+        for f in base_filters:
+            count_stmt = count_stmt.where(f)
+        total = (await self.db.execute(count_stmt)).scalar() or 0
+
+        # Data query
         col = getattr(ArbitrageOpportunity, sort_by, ArbitrageOpportunity.total_profit)
-        stmt = stmt.order_by(desc(col)).limit(limit)
+        stmt = select(ArbitrageOpportunity)
+        for f in base_filters:
+            stmt = stmt.where(f)
+        stmt = stmt.order_by(desc(col)).offset(offset).limit(limit)
 
         result = await self.db.execute(stmt)
         rows = result.scalars().all()
@@ -215,7 +230,7 @@ class ArbitrageEngine:
         region_ids = {r.buy_region_id for r in rows} | {r.sell_region_id for r in rows}
         names = await self._resolve_names(type_ids, region_ids)
 
-        return [
+        items = [
             {
                 "id": r.id,
                 "type_id": r.type_id,
@@ -236,6 +251,7 @@ class ArbitrageEngine:
             }
             for r in rows
         ]
+        return items, total
 
     # ------------------------------------------------------------------
     # Internal

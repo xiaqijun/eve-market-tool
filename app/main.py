@@ -1,13 +1,20 @@
 """EVE Market Tool — FastAPI application entry point."""
 
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
+from jinja2 import Environment, FileSystemLoader
 
 from app.api.v1.router import api_v1_router
 from app.tasks.scheduler import init_scheduler, shutdown_scheduler, start_scheduler
+
+_jinja_env = Environment(
+    loader=FileSystemLoader(str(Path(__file__).parent / "templates")),
+    auto_reload=False,
+)
 
 
 @asynccontextmanager
@@ -33,23 +40,16 @@ def create_app() -> FastAPI:
 app = create_app()
 
 
+def _render(template_name: str, request: Request) -> HTMLResponse:
+    template = _jinja_env.get_template(template_name)
+    return HTMLResponse(template.render(request=request))
+
+
 @app.get("/")
 async def root(request: Request):
-    """Dashboard overview page — rendered via Jinja2."""
-    from jinja2 import Environment, FileSystemLoader
-    from pathlib import Path
-
-    env = Environment(
-        loader=FileSystemLoader(str(Path(__file__).parent / "templates")),
-        cache_size=0,
-        auto_reload=False,
-    )
     try:
-        template = env.get_template("dashboard/overview.html")
-        html = template.render(request=request)
-        return HTMLResponse(html)
+        return _render("dashboard/overview.html", request)
     except Exception as e:
-        # Fallback: return JSON if template fails
         return {
             "app": "EVE Market Tool",
             "version": "0.1.0",
@@ -60,35 +60,19 @@ async def root(request: Request):
 
 @app.get("/arbitrage")
 async def arbitrage_page(request: Request):
-    from jinja2 import Environment, FileSystemLoader
-    from pathlib import Path
-    env = Environment(loader=FileSystemLoader(str(Path(__file__).parent / "templates")))
-    template = env.get_template("dashboard/arbitrage.html")
-    return HTMLResponse(template.render(request=request))
+    return _render("dashboard/arbitrage.html", request)
 
 
 @app.get("/trading")
 async def trading_page(request: Request):
-    from jinja2 import Environment, FileSystemLoader
-    from pathlib import Path
-    env = Environment(loader=FileSystemLoader(str(Path(__file__).parent / "templates")))
-    template = env.get_template("dashboard/trading.html")
-    return HTMLResponse(template.render(request=request))
+    return _render("dashboard/trading.html", request)
 
 
 @app.get("/alerts")
 async def alerts_page(request: Request):
-    from jinja2 import Environment, FileSystemLoader
-    from pathlib import Path
-    env = Environment(loader=FileSystemLoader(str(Path(__file__).parent / "templates")))
-    template = env.get_template("dashboard/alerts.html")
-    return HTMLResponse(template.render(request=request))
+    return _render("dashboard/alerts.html", request)
 
 
 @app.get("/manufacturing")
 async def manufacturing_page(request: Request):
-    from jinja2 import Environment, FileSystemLoader
-    from pathlib import Path
-    env = Environment(loader=FileSystemLoader(str(Path(__file__).parent / "templates")))
-    template = env.get_template("dashboard/manufacturing.html")
-    return HTMLResponse(template.render(request=request))
+    return _render("dashboard/manufacturing.html", request)

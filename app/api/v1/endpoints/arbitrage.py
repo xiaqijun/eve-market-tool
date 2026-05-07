@@ -26,25 +26,21 @@ async def list_opportunities(
 ):
     """List detected arbitrage opportunities."""
     engine = ArbitrageEngine(db)
-    items = await engine.get_opportunities(
+    offset = (page - 1) * per_page
+    items, total = await engine.get_opportunities(
         limit=per_page,
+        offset=offset,
         min_margin=min_profit_margin,
         min_profit=min_profit_isk,
         region_id=region_id,
         sort_by=sort_by,
     )
 
-    # Simple in-memory pagination
-    total = len(items)
-    start = (page - 1) * per_page
-    end = start + per_page
-    page_items = items[start:end]
-
     return ArbitrageListResponse(
         page=page,
         per_page=per_page,
         total=total,
-        items=[ArbitrageOpportunityResponse(**item) for item in page_items],
+        items=[ArbitrageOpportunityResponse(**item) for item in items],
     )
 
 
@@ -54,12 +50,40 @@ async def get_opportunity(
     db: AsyncSession = Depends(get_db),
 ):
     """Get a single arbitrage opportunity detail."""
-    engine = ArbitrageEngine(db)
-    items = await engine.get_opportunities(limit=200, min_margin=0)
-    for item in items:
-        if item["id"] == opportunity_id:
-            return ArbitrageOpportunityResponse(**item)
-    raise HTTPException(status_code=404, detail="Opportunity not found")
+    from sqlalchemy import select
+    from app.models.trading import ArbitrageOpportunity
+    from app.repositories.item import get_item_by_type_id
+    from app.repositories.region import get_region_by_eve_id
+
+    result = await db.execute(
+        select(ArbitrageOpportunity).where(ArbitrageOpportunity.id == opportunity_id)
+    )
+    r = result.scalar_one_or_none()
+    if r is None:
+        raise HTTPException(status_code=404, detail="Opportunity not found")
+
+    item = await get_item_by_type_id(db, r.type_id)
+    buy_region = await get_region_by_eve_id(db, r.buy_region_id)
+    sell_region = await get_region_by_eve_id(db, r.sell_region_id)
+
+    return ArbitrageOpportunityResponse(
+        id=r.id,
+        type_id=r.type_id,
+        item_name=item.name if item else f"#{r.type_id}",
+        buy_region_id=r.buy_region_id,
+        buy_region_name=buy_region.name if buy_region else f"#{r.buy_region_id}",
+        sell_region_id=r.sell_region_id,
+        sell_region_name=sell_region.name if sell_region else f"#{r.sell_region_id}",
+        buy_price=r.buy_price,
+        sell_price=r.sell_price,
+        buy_volume=r.buy_volume,
+        sell_volume=r.sell_volume,
+        quantity=r.quantity,
+        profit_per_unit=r.profit_per_unit,
+        profit_margin=r.profit_margin,
+        total_profit=r.total_profit,
+        detected_at=r.detected_at.isoformat() if r.detected_at else None,
+    )
 
 
 @router.get("/items/{type_id}/comparison", response_model=list[PriceComparisonResponse])

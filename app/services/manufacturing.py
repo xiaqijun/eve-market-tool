@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import datetime
 import logging
+import time
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,12 +17,51 @@ from app.models.manufacturing import BlueprintMaterial, ManufacturingAnalysis
 
 logger = logging.getLogger(__name__)
 
+# Jita solar system ID (The Forge)
+JITA_SYSTEM_ID = 30000142
+
+# In-memory cache for industry cost indices
+_cost_indices_cache: dict[int, float] = {}
+_cost_indices_ts: float = 0.0
+_COST_INDICES_TTL = 3600  # 1 hour
+
 
 class ManufacturingAnalyzer:
     """Analyzes blueprint manufacturing profitability."""
 
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
+        self._esi = None
+
+    def _get_esi(self):
+        from app.core.esi import EsiClient
+        if self._esi is None:
+            self._esi = EsiClient()
+        return self._esi
+
+    async def _get_cost_index(self, system_id: int) -> float:
+        """Get the manufacturing cost index for a solar system from ESI.
+
+        Uses a 1-hour in-memory cache. Returns a default of 0.01 on failure.
+        """
+        global _cost_indices_cache, _cost_indices_ts
+
+        now = time.monotonic()
+        if now - _cost_indices_ts > _COST_INDICES_TTL or not _cost_indices_cache:
+            esi = self._get_esi()
+            try:
+                systems = await esi.get_industry_systems()
+                _cost_indices_cache.clear()
+                for sys in systems:
+                    for ci in sys.get("cost_indices", []):
+                        if ci.get("activity") == "manufacturing":
+                            _cost_indices_cache[sys["solar_system_id"]] = ci["cost_index"]
+                _cost_indices_ts = now
+                logger.info("Refreshed industry cost indices for %d systems", len(_cost_indices_cache))
+            except Exception as e:
+                logger.warning("Failed to fetch industry cost indices: %s", e)
+
+        return _cost_indices_cache.get(system_id, 0.01)
 
     async def analyze_blueprint(
         self,
@@ -29,6 +69,7 @@ class ManufacturingAnalyzer:
         region_id: int = 10000002,
         quantity: int = 1,
         facility_tax: float = 0.0,
+        system_id: int = JITA_SYSTEM_ID,
     ) -> dict:
         """Calculate manufacturing cost and estimated profit.
 
@@ -80,9 +121,9 @@ class ManufacturingAnalyzer:
                 }
             )
 
-        # 3. Job installation fee is a percentage of total material cost
-        # (simplified; the actual formula uses system cost index)
-        job_installation_fee = materials_cost * 0.01 * (1 + facility_tax)
+        # 3. Job installation fee: materials_cost * system_cost_index * (1 + facility_tax)
+        cost_index = await self._get_cost_index(system_id)
+        job_installation_fee = materials_cost * cost_index * (1 + facility_tax)
 
         # 4. Total production cost
         total_cost = materials_cost + job_installation_fee
@@ -127,6 +168,8 @@ class ManufacturingAnalyzer:
             "product_type_id": blueprint.product_type_id,
             "product_name": product_name,
             "region_id": region_id,
+            "system_id": system_id,
+            "cost_index": cost_index,
             "quantity": quantity,
             "materials": material_details,
             "materials_cost": materials_cost,

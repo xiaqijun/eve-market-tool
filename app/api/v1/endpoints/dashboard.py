@@ -1,6 +1,9 @@
 """Dashboard API endpoints."""
 
+import json
+
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -36,6 +39,39 @@ async def get_trends(
     service = DashboardService(db)
     data = await service.get_trends(type_id, region_id)
     return PriceTrendResponse(**data)
+
+
+@router.get("/trends/{type_id}/chart", response_class=HTMLResponse)
+async def get_trends_chart(
+    type_id: int,
+    region_id: int = Query(default=10000002),
+    db: AsyncSession = Depends(get_db),
+):
+    """Price trend as an HTML snippet for htmx + Chart.js rendering."""
+    service = DashboardService(db)
+    data = await service.get_trends(type_id, region_id)
+    trend_json = json.dumps(data, ensure_ascii=False)
+    item_name = data.get("item_name", f"#{type_id}")
+    region_name = data.get("region_name", "")
+    points = len(data.get("data_points", []))
+
+    html = f"""
+    <div style="margin-bottom:0.5rem;font-family:var(--font-mono);font-size:0.8rem;color:var(--text-dim);">
+        {item_name} · {region_name} · {points} 个数据点
+    </div>
+    <div style="position:relative;height:350px;">
+        <canvas id="priceChart" data-trend='{trend_json}'></canvas>
+    </div>
+    <script>
+        (function() {{
+            const el = document.getElementById('priceChart');
+            if (el && window.initPriceChart) {{
+                window.initPriceChart('priceChart', {trend_json});
+            }}
+        }})();
+    </script>
+    """
+    return HTMLResponse(html)
 
 
 @router.get("/hot-items", response_model=list[HotItemResponse])

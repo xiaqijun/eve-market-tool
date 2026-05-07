@@ -69,6 +69,7 @@ async def analyze_blueprint(
             region_id=request.region_id,
             quantity=request.quantity,
             facility_tax=request.facility_tax,
+            system_id=request.system_id,
         )
         return ManufacturingAnalysisResponse(**result)
     except ValueError as e:

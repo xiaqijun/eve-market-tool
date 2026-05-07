@@ -19,6 +19,7 @@ class ManufacturingAnalysisRequest(BaseModel):
     region_id: int = 10000002
     quantity: int = 1
     facility_tax: float = 0.0
+    system_id: int = 30000142  # Jita
 
 
 class ManufacturingAnalysisResponse(BaseModel):
@@ -27,6 +28,8 @@ class ManufacturingAnalysisResponse(BaseModel):
     product_type_id: int
     product_name: str
     region_id: int
+    system_id: int | None = None
+    cost_index: float | None = None
     quantity: int
     materials: list[MaterialDetail] = []
     materials_cost: float
