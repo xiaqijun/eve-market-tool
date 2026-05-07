@@ -1,4 +1,4 @@
-"""Alert models: price alerts and hot items."""
+"""Alert models: price alerts."""
 
 import datetime
 
@@ -35,28 +35,4 @@ class PriceAlert(Base):
         return (
             f"<PriceAlert type_id={self.type_id} "
             f"condition={self.condition} threshold={self.threshold}>"
-        )
-
-
-class HotItem(Base):
-    """Item with unusual volume/price movement."""
-
-    __tablename__ = "hot_item"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    type_id: Mapped[int] = mapped_column(Integer, nullable=False)
-    region_id: Mapped[int] = mapped_column(Integer, nullable=False)
-    volume_change_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
-    price_change_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
-    spike_score: Mapped[float] = mapped_column(Float, nullable=False)
-    detected_at: Mapped[datetime.datetime] = mapped_column(
-        DateTime(timezone=True), default=datetime.datetime.utcnow, nullable=False
-    )
-
-    __table_args__ = ()
-
-    def __repr__(self) -> str:
-        return (
-            f"<HotItem type_id={self.type_id} region={self.region_id} "
-            f"score={self.spike_score:.2f}>"
         )

@@ -14,21 +14,13 @@ async def get_item_by_type_id(db: AsyncSession, type_id: int) -> Item | None:
 async def search_items(
     db: AsyncSession, query: str, limit: int = 50
 ) -> list[Item]:
-    """Full-text search on item name. Falls back to ILIKE if GIN index unavailable."""
-    try:
-        stmt = (
-            select(Item)
-            .where(Item.name.ilike(f"%{query}%"))
-            .order_by(Item.name)
-            .limit(limit)
-        )
-    except Exception:
-        stmt = (
-            select(Item)
-            .where(Item.name.ilike(f"%{query}%"))
-            .order_by(Item.name)
-            .limit(limit)
-        )
+    """Search items by name (case-insensitive substring match)."""
+    stmt = (
+        select(Item)
+        .where(Item.name.ilike(f"%{query}%"))
+        .order_by(Item.name)
+        .limit(limit)
+    )
     result = await db.execute(stmt)
     return list(result.scalars().all())
 

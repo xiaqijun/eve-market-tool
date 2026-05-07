@@ -1,0 +1,49 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+
+# Data files
+sde.sqlite*
+*.bz2
+*.log
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# IDE / tools
+.claude/
+.idea/
+.vscode/
+
+# Git
+.git/
+
+# Lock files
+uv.lock
+
+# Large static assets
+static/css/
+static/js/
+
+# One-time migration / data scripts
+/explore_sde.py
+/import_blueprints.py
+/refresh_hot_items.py
+/resolve_items.py
+/resolve_items_sde.py
+/seed_regions.py
+
+# Root-level test scripts (use tests/ instead)
+/test_alert.py
+/test_manufacturing.py
+/test_trade.py
+
+# Deploy scripts
+/deploy.sh
+/deploy_auto.py
