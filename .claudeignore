@@ -31,19 +31,5 @@ uv.lock
 static/css/
 static/js/
 
-# One-time migration / data scripts
-/explore_sde.py
-/import_blueprints.py
-/refresh_hot_items.py
-/resolve_items.py
-/resolve_items_sde.py
-/seed_regions.py
-
-# Root-level test scripts (use tests/ instead)
-/test_alert.py
-/test_manufacturing.py
-/test_trade.py
-
-# Deploy scripts
-/deploy.sh
-/deploy_auto.py
+# One-time scripts (migration, deploy, test utilities)
+scripts/
