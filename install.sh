@@ -11,6 +11,18 @@
 
 set -euo pipefail
 
+# ---- Auto-detect sudo ----
+if [ "$(id -u)" -ne 0 ]; then
+    if command -v sudo &>/dev/null; then
+        SUDO="sudo"
+    else
+        echo "Error: This script requires root. Run with: sudo bash"
+        exit 1
+    fi
+else
+    SUDO=""
+fi
+
 # ---- Defaults ----
 INSTALL_DIR="/opt/eve-market-tool"
 APP_PORT=8000
@@ -162,15 +174,17 @@ elif [ -d "$INSTALL_DIR" ]; then
     warn "Directory $INSTALL_DIR exists but is not a git repo."
     BACKUP="${INSTALL_DIR}.bak.$(date +%s)"
     info "Backing up to $BACKUP ..."
-    mv "$INSTALL_DIR" "$BACKUP"
+    $SUDO mv "$INSTALL_DIR" "$BACKUP"
     log "Old directory moved to $BACKUP"
     info "Cloning fresh copy..."
-    git clone --branch "$BRANCH" "$REPO_URL" "$INSTALL_DIR"
+    $SUDO git clone --branch "$BRANCH" "$REPO_URL" "$INSTALL_DIR"
+    $SUDO chown -R "$(id -u):$(id -g)" "$INSTALL_DIR"
     cd "$INSTALL_DIR"
     log "Cloned to $INSTALL_DIR"
 else
     info "Cloning repository..."
-    git clone --branch "$BRANCH" "$REPO_URL" "$INSTALL_DIR"
+    $SUDO git clone --branch "$BRANCH" "$REPO_URL" "$INSTALL_DIR"
+    $SUDO chown -R "$(id -u):$(id -g)" "$INSTALL_DIR"
     cd "$INSTALL_DIR"
     log "Cloned to $INSTALL_DIR"
 fi
@@ -255,8 +269,8 @@ fi
 
 # ---- Install CLI tool ----
 info "Installing 'eve' CLI tool..."
-cp "$INSTALL_DIR/eve" /usr/local/bin/eve
-chmod +x /usr/local/bin/eve
+$SUDO cp "$INSTALL_DIR/eve" /usr/local/bin/eve
+$SUDO chmod +x /usr/local/bin/eve
 log "CLI tool installed: eve"
 
 # ---- Done ----
