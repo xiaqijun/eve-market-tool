@@ -24,13 +24,16 @@ uv run ruff check app/
 ## Architecture
 
 - **app/api/v1/endpoints/** — FastAPI route handlers (8 modules, ~29 routes)
+- **app/api/deps.py** — Shared dependencies: `get_db`, `get_current_user`, `get_current_user_optional`
 - **app/core/** — Config (pydantic-settings), DB engine (async SQLAlchemy), ESI client (httpx + token bucket + ETag cache), security (JWT + EVE SSO)
 - **app/models/** — SQLAlchemy ORM models (14 models)
 - **app/schemas/** — Pydantic v2 request/response schemas
 - **app/services/** — Business logic (arbitrage, trading, manufacturing, market fetcher, dashboard, alerts, SDE loader)
 - **app/repositories/** — Data access layer (DAO)
 - **app/tasks/** — APScheduler periodic jobs (7 jobs, 5-min interval)
-- **app/templates/** — Jinja2 + htmx + Alpine.js frontend
+- **app/templates/** — Jinja2 + htmx + Alpine.js + Chart.js frontend
+- **scripts/** — Deploy and one-time utility scripts (gitignored)
+- **tests/unit/** — Unit tests (JWT, ESI client, manufacturing)
 
 ## Key patterns
 
@@ -38,7 +41,16 @@ uv run ruff check app/
 - ESI client has built-in rate limiting (token bucket, 12000 tokens/5min), ETag caching, auto-pagination, and tenacity retry
 - Services use raw SQL (via `sqlalchemy.text`) for complex aggregations, ORM for simple CRUD
 - Frontend is server-rendered Jinja2 with htmx for partial updates and Alpine.js for interactivity
-- No separate frontend build step — all static assets in `static/`
+- Chart.js for price trend charts (via `/api/v1/dashboard/trends/{id}/chart` HTML endpoint)
+- Jinja2 `Environment` is a module-level singleton in `app/main.py`
+- Manufacturing cost uses real ESI industry cost indices (`/industry/systems/`), 1-hour cache
+- Arbitrage pagination is DB-level (COUNT + OFFSET/LIMIT), not in-memory
+
+## Authentication
+
+EVE SSO OAuth2 flow: `/api/v1/auth/login` → SSO → `/api/v1/auth/callback` → JWT issued.
+Protected endpoints use `get_current_user` dependency (reads `Authorization: Bearer <token>`).
+Public endpoints: dashboard, arbitrage list, items search, trading opportunities.
 
 ## Config
 
