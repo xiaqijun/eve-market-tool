@@ -3,7 +3,8 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import get_db
+from app.api.deps import get_current_user, get_db
+from app.models.user import User
 from app.repositories import trading as trading_repo
 from app.schemas.trading import (
     StationTradingOpportunityResponse,
@@ -80,11 +81,12 @@ async def list_trades(
     status: str | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """List tracked trades."""
+    """List current user's tracked trades."""
     trades = await trading_repo.get_trades_by_user(
-        db, status=status, limit=limit, offset=offset
+        db, user_id=user.id, status=status, limit=limit, offset=offset
     )
     return trades
 
@@ -92,6 +94,7 @@ async def list_trades(
 @router.post("/trades", response_model=TradeResponse)
 async def create_trade(
     request: TradeCreateRequest,
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Start tracking a new station trade."""
@@ -106,6 +109,7 @@ async def create_trade(
         volume_remaining=request.quantity,
         notes=request.notes,
         status="active",
+        user_id=user.id,
     )
     return trade
 
@@ -114,20 +118,24 @@ async def create_trade(
 async def update_trade(
     trade_id: int,
     request: TradeUpdateRequest,
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Update a tracked trade's status or details."""
+    trade = await trading_repo.get_trade_by_id(db, trade_id)
+    if trade is None or trade.user_id != user.id:
+        raise HTTPException(status_code=404, detail="Trade not found")
+
     update_data = {k: v for k, v in request.model_dump().items() if v is not None}
     trade = await trading_repo.update_trade(db, trade_id, **update_data)
-    if trade is None:
-        raise HTTPException(status_code=404, detail="Trade not found")
     return trade
 
 
 @router.get("/summary", response_model=TradeSummaryResponse)
 async def get_trade_summary(
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Get profit/loss summary for all tracked trades."""
-    summary = await trading_repo.get_trade_summary(db)
+    """Get profit/loss summary for current user's tracked trades."""
+    summary = await trading_repo.get_trade_summary(db, user_id=user.id)
     return TradeSummaryResponse(**summary)

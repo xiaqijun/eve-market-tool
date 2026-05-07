@@ -1,11 +1,13 @@
 """Price alert API endpoints."""
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import get_db
+from app.api.deps import get_current_user, get_db
+from app.models.alert import PriceAlert
+from app.models.user import User
 from app.repositories import alert as alert_repo
-from pydantic import BaseModel, Field
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
 
@@ -38,41 +40,37 @@ class AlertResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+def _alert_response(a: PriceAlert) -> AlertResponse:
+    return AlertResponse(
+        id=a.id,
+        user_id=a.user_id,
+        type_id=a.type_id,
+        region_id=a.region_id,
+        condition=a.condition,
+        threshold=a.threshold,
+        is_active=a.is_active,
+        last_triggered=a.last_triggered.isoformat() if a.last_triggered else None,
+        created_at=a.created_at.isoformat() if a.created_at else None,
+    )
+
+
 @router.get("/", response_model=list[AlertResponse])
 async def list_alerts(
     active_only: bool = Query(default=False),
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """List all price alerts."""
-    # For now, list all alerts (user filter when auth is active)
-    from app.models.alert import PriceAlert
-    from sqlalchemy import select
-
-    stmt = select(PriceAlert).order_by(PriceAlert.created_at.desc())
-    if active_only:
-        stmt = stmt.where(PriceAlert.is_active == True)  # noqa: E712
-    result = await db.execute(stmt)
-    alerts = result.scalars().all()
-
-    return [
-        AlertResponse(
-            id=a.id,
-            user_id=a.user_id,
-            type_id=a.type_id,
-            region_id=a.region_id,
-            condition=a.condition,
-            threshold=a.threshold,
-            is_active=a.is_active,
-            last_triggered=a.last_triggered.isoformat() if a.last_triggered else None,
-            created_at=a.created_at.isoformat() if a.created_at else None,
-        )
-        for a in alerts
-    ]
+    """List current user's price alerts."""
+    alerts = await alert_repo.get_alerts_by_user(
+        db, user_id=user.id, active_only=active_only
+    )
+    return [_alert_response(a) for a in alerts]
 
 
 @router.post("/", response_model=AlertResponse)
 async def create_alert(
     request: AlertCreate,
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Create a new price alert."""
@@ -83,47 +81,37 @@ async def create_alert(
         condition=request.condition,
         threshold=request.threshold,
         is_active=request.is_active,
-        user_id=None,  # no auth yet
+        user_id=user.id,
     )
-    return AlertResponse(
-        id=alert.id, user_id=alert.user_id,
-        type_id=alert.type_id, region_id=alert.region_id,
-        condition=alert.condition, threshold=alert.threshold,
-        is_active=alert.is_active,
-        last_triggered=alert.last_triggered.isoformat() if alert.last_triggered else None,
-        created_at=alert.created_at.isoformat() if alert.created_at else None,
-    )
+    return _alert_response(alert)
 
 
 @router.put("/{alert_id}", response_model=AlertResponse)
 async def update_alert(
     alert_id: int,
     request: AlertUpdate,
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Update or disable a price alert."""
+    alert = await alert_repo.get_alert_by_id(db, alert_id)
+    if alert is None or alert.user_id != user.id:
+        raise HTTPException(status_code=404, detail="Alert not found")
+
     updates = {k: v for k, v in request.model_dump().items() if v is not None}
     alert = await alert_repo.update_alert(db, alert_id, **updates)
-    if alert is None:
-        raise HTTPException(status_code=404, detail="Alert not found")
-    return AlertResponse(
-        id=alert.id, user_id=alert.user_id,
-        type_id=alert.type_id, region_id=alert.region_id,
-        condition=alert.condition, threshold=alert.threshold,
-        is_active=alert.is_active,
-        last_triggered=alert.last_triggered.isoformat() if alert.last_triggered else None,
-        created_at=alert.created_at.isoformat() if alert.created_at else None,
-    )
+    return _alert_response(alert)
 
 
 @router.delete("/{alert_id}")
 async def delete_alert(
     alert_id: int,
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """Delete a price alert."""
     alert = await alert_repo.get_alert_by_id(db, alert_id)
-    if alert is None:
+    if alert is None or alert.user_id != user.id:
         raise HTTPException(status_code=404, detail="Alert not found")
     await db.delete(alert)
     await db.commit()

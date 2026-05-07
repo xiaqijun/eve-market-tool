@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.database import get_db
+from app.api.deps import get_current_user, get_db
 from app.core.security import EveSsoClient, JwtHandler, hash_token
 from app.models.user import User
 from sqlalchemy import select
@@ -77,15 +77,14 @@ async def callback(
 
 
 @router.get("/me")
-async def get_current_user(
-    db: AsyncSession = Depends(get_db),
-):
-    """Get current user info. Requires auth header for Phase 4+.
-
-    For now, returns a simple status message.
-    """
+async def me(user: User = Depends(get_current_user)):
+    """Get current user info."""
     return {
-        "message": "Auth endpoint operational. Use /api/v1/auth/login to sign in.",
+        "character_id": user.character_id,
+        "character_name": user.character_name,
+        "corporation_id": user.corporation_id,
+        "alliance_id": user.alliance_id,
+        "last_login_at": user.last_login_at.isoformat() if user.last_login_at else None,
     }
 
 
