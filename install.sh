@@ -1,0 +1,205 @@
+#!/usr/bin/env bash
+# ============================================================
+# EVE Market Tool — One-Click Installer
+#
+# Download and run:
+#   curl -fsSL https://raw.githubusercontent.com/YOUR_USER/eve-market-tool/main/install.sh | bash
+#
+# Or with custom settings:
+#   curl -fsSL .../install.sh | bash -s -- --port 9000 --dir /opt/eve
+# ============================================================
+
+set -euo pipefail
+
+# ---- Defaults ----
+INSTALL_DIR="/opt/eve-market-tool"
+APP_PORT=8000
+DB_PORT=5432
+REPO_URL="https://github.com/YOUR_USER/eve-market-tool.git"
+BRANCH="main"
+
+# ---- Parse args ----
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --dir)    INSTALL_DIR="$2"; shift 2 ;;
+        --port)   APP_PORT="$2"; shift 2 ;;
+        --db-port) DB_PORT="$2"; shift 2 ;;
+        --repo)   REPO_URL="$2"; shift 2 ;;
+        --branch) BRANCH="$2"; shift 2 ;;
+        -h|--help)
+            echo "Usage: install.sh [OPTIONS]"
+            echo ""
+            echo "Options:"
+            echo "  --dir PATH       Install directory (default: /opt/eve-market-tool)"
+            echo "  --port PORT      App port (default: 8000)"
+            echo "  --db-port PORT   Database port (default: 5432)"
+            echo "  --repo URL       Git repository URL"
+            echo "  --branch NAME    Git branch (default: main)"
+            echo "  -h, --help       Show this help"
+            exit 0
+            ;;
+        *) echo "Unknown option: $1"; exit 1 ;;
+    esac
+done
+
+# ---- Colors ----
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+NC='\033[0m'
+
+log()  { echo -e "${GREEN}[✓]${NC} $*"; }
+warn() { echo -e "${YELLOW}[!]${NC} $*"; }
+err()  { echo -e "${RED}[✗]${NC} $*"; exit 1; }
+info() { echo -e "${CYAN}[i]${NC} $*"; }
+
+# ---- Banner ----
+echo ""
+echo -e "${CYAN}╔══════════════════════════════════════════╗${NC}"
+echo -e "${CYAN}║     EVE Market Tool — One-Click Setup    ║${NC}"
+echo -e "${CYAN}╚══════════════════════════════════════════╝${NC}"
+echo ""
+
+# ---- Check prerequisites ----
+info "Checking prerequisites..."
+
+if ! command -v docker &>/dev/null; then
+    warn "Docker not found. Installing..."
+    curl -fsSL https://get.docker.com | bash
+    systemctl enable docker && systemctl start docker
+    log "Docker installed"
+else
+    log "Docker: $(docker --version | head -1)"
+fi
+
+if ! docker compose version &>/dev/null 2>&1; then
+    warn "Docker Compose plugin not found. Installing..."
+    apt-get update -qq && apt-get install -y -qq docker-compose-plugin
+    log "Docker Compose installed"
+else
+    log "Docker Compose: $(docker compose version --short 2>/dev/null || echo 'OK')"
+fi
+
+if ! command -v git &>/dev/null; then
+    warn "Git not found. Installing..."
+    apt-get update -qq && apt-get install -y -qq git
+    log "Git installed"
+else
+    log "Git: $(git --version)"
+fi
+
+# ---- Clone or update repo ----
+echo ""
+info "Setting up project..."
+
+if [ -d "$INSTALL_DIR/.git" ]; then
+    info "Existing installation found. Pulling latest..."
+    cd "$INSTALL_DIR"
+    git fetch origin "$BRANCH"
+    git reset --hard "origin/$BRANCH"
+    log "Updated to latest"
+else
+    info "Cloning repository..."
+    git clone --branch "$BRANCH" "$REPO_URL" "$INSTALL_DIR"
+    cd "$INSTALL_DIR"
+    log "Cloned to $INSTALL_DIR"
+fi
+
+# ---- Generate .env ----
+echo ""
+info "Configuring environment..."
+
+if [ -f .env ]; then
+    warn ".env already exists — keeping existing config"
+else
+    # Generate random secrets
+    SECRET_KEY=$(python3 -c "import secrets; print(secrets.token_urlsafe(32))" 2>/dev/null || openssl rand -base64 32)
+    POSTGRES_PASSWORD=$(python3 -c "import secrets; print(secrets.token_urlsafe(16))" 2>/dev/null || openssl rand -base64 16)
+
+    # Detect server IP
+    SERVER_IP=$(curl -s --max-time 5 https://api.ipify.org 2>/dev/null || hostname -I | awk '{print $1}' || echo "YOUR_SERVER_IP")
+
+    cat > .env <<EOF
+# ---- Database ----
+POSTGRES_USER=eve_market
+POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+POSTGRES_DB=eve_market
+DB_PORT=${DB_PORT}
+
+# ---- Application ----
+APP_PORT=${APP_PORT}
+
+# ---- ESI API ----
+ESI_USER_AGENT=EVE-Market-Tool/1.0 (installer; +https://github.com/user/repo)
+ESI_BASE_URL=https://esi.evetech.net/latest
+
+# ---- Security ----
+SECRET_KEY=${SECRET_KEY}
+
+# ---- EVE SSO (optional, configure at https://developers.eveonline.com/) ----
+EVE_CLIENT_ID=
+EVE_CLIENT_SECRET=
+EVE_CALLBACK_URL=http://${SERVER_IP}:${APP_PORT}/api/v1/auth/callback
+
+# ---- Scheduler ----
+MARKET_FETCH_INTERVAL_MINUTES=5
+EOF
+
+    log ".env generated with random secrets"
+    info "Server IP detected: ${SERVER_IP}"
+fi
+
+# ---- Build and start ----
+echo ""
+info "Building Docker images (this may take a few minutes)..."
+docker compose build --pull
+
+info "Starting services..."
+docker compose up -d
+
+# ---- Wait for DB ----
+info "Waiting for PostgreSQL..."
+for i in $(seq 1 30); do
+    if docker compose exec -T db pg_isready -U eve_market &>/dev/null; then
+        log "PostgreSQL ready"
+        break
+    fi
+    sleep 1
+done
+
+# ---- Run migrations ----
+echo ""
+info "Running database migrations..."
+docker compose exec -T app alembic upgrade head 2>&1 || warn "Migration may need manual review"
+
+# ---- Health check ----
+info "Verifying deployment..."
+sleep 3
+
+HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:${APP_PORT}/" 2>/dev/null || echo "000")
+if [ "$HTTP_CODE" = "200" ]; then
+    log "App responding (HTTP $HTTP_CODE)"
+else
+    warn "App returned HTTP $HTTP_CODE — may still be starting up"
+fi
+
+# ---- Done ----
+echo ""
+echo -e "${GREEN}╔══════════════════════════════════════════╗${NC}"
+echo -e "${GREEN}║        Installation Complete!            ║${NC}"
+echo -e "${GREEN}╚══════════════════════════════════════════╝${NC}"
+echo ""
+echo -e "  App:       ${CYAN}http://$(curl -s https://api.ipify.org 2>/dev/null || echo 'YOUR_SERVER_IP'):${APP_PORT}/${NC}"
+echo -e "  API Docs:  ${CYAN}http://$(curl -s https://api.ipify.org 2>/dev/null || echo 'YOUR_SERVER_IP'):${APP_PORT}/docs${NC}"
+echo ""
+echo -e "  Config:    ${INSTALL_DIR}/.env"
+echo -e "  Logs:      cd ${INSTALL_DIR} && docker compose logs -f"
+echo -e "  Restart:   cd ${INSTALL_DIR} && docker compose restart"
+echo -e "  Update:    cd ${INSTALL_DIR} && git pull && docker compose up -d --build"
+echo ""
+echo "  Next steps:"
+echo "  1. Open port ${APP_PORT} in your cloud firewall"
+echo "  2. Edit .env to configure EVE SSO (optional)"
+echo "  3. Set EVE SSO callback: http://YOUR_IP:${APP_PORT}/api/v1/auth/callback"
+echo ""
