@@ -19,8 +19,10 @@ REPO_URL="https://github.com/xiaqijun/eve-market-tool.git"
 BRANCH="main"
 
 # ---- Parse args ----
+UPDATE_MODE=false
 while [[ $# -gt 0 ]]; do
     case $1 in
+        --update) UPDATE_MODE=true; shift ;;
         --dir)    INSTALL_DIR="$2"; shift 2 ;;
         --port)   APP_PORT="$2"; shift 2 ;;
         --db-port) DB_PORT="$2"; shift 2 ;;
@@ -30,6 +32,7 @@ while [[ $# -gt 0 ]]; do
             echo "Usage: install.sh [OPTIONS]"
             echo ""
             echo "Options:"
+            echo "  --update         Update existing installation"
             echo "  --dir PATH       Install directory (default: /opt/eve-market-tool)"
             echo "  --port PORT      App port (default: 8000)"
             echo "  --db-port PORT   Database port (default: 5432)"
@@ -87,6 +90,62 @@ if ! command -v git &>/dev/null; then
     log "Git installed"
 else
     log "Git: $(git --version)"
+fi
+
+# ---- Update mode ----
+if [ "$UPDATE_MODE" = true ]; then
+    if [ ! -d "$INSTALL_DIR/.git" ]; then
+        err "No installation found at $INSTALL_DIR. Run without --update first."
+    fi
+
+    echo ""
+    info "Updating EVE Market Tool..."
+
+    cd "$INSTALL_DIR"
+
+    # Save current version
+    OLD_VER=$(grep 'version' pyproject.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+    info "Current version: $OLD_VER"
+
+    # Pull latest
+    info "Pulling latest code..."
+    git fetch origin "$BRANCH"
+    git reset --hard "origin/$BRANCH"
+    NEW_VER=$(grep 'version' pyproject.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
+    log "Updated: $OLD_VER → $NEW_VER"
+
+    # Rebuild
+    info "Rebuilding containers..."
+    docker compose build --pull
+    log "Images rebuilt"
+
+    # Restart
+    info "Restarting services..."
+    docker compose up -d
+    log "Services restarted"
+
+    # Migrations
+    info "Running migrations..."
+    docker compose exec -T app alembic upgrade head 2>&1 || warn "Migration may need manual review"
+
+    # Health check
+    sleep 3
+    HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:${APP_PORT}/" 2>/dev/null || echo "000")
+    if [ "$HTTP_CODE" = "200" ]; then
+        log "App responding (HTTP $HTTP_CODE)"
+    else
+        warn "App returned HTTP $HTTP_CODE — may still be starting"
+    fi
+
+    echo ""
+    echo -e "${GREEN}╔══════════════════════════════════════════╗${NC}"
+    echo -e "${GREEN}║          Update Complete!                ║${NC}"
+    echo -e "${GREEN}╚══════════════════════════════════════════╝${NC}"
+    echo ""
+    echo -e "  Version: ${OLD_VER} → ${CYAN}${NEW_VER}${NC}"
+    echo -e "  Logs:    cd ${INSTALL_DIR} && docker compose logs -f"
+    echo ""
+    exit 0
 fi
 
 # ---- Clone or update repo ----

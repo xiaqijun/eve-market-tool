@@ -10,6 +10,12 @@ curl -fsSL https://raw.githubusercontent.com/xiaqijun/eve-market-tool/main/insta
 
 支持自定义参数：`--port 9000 --dir /opt/eve`
 
+更新已有部署：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/xiaqijun/eve-market-tool/main/install.sh | bash -s -- --update
+```
+
 ## 功能
 
 - **跨区域套利** — 比较 Jita / Amarr / Dodixie / Rens / Hek 五大贸易中心价格，发现套利机会
