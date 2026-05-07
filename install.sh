@@ -158,6 +158,16 @@ if [ -d "$INSTALL_DIR/.git" ]; then
     git fetch origin "$BRANCH"
     git reset --hard "origin/$BRANCH"
     log "Updated to latest"
+elif [ -d "$INSTALL_DIR" ]; then
+    warn "Directory $INSTALL_DIR exists but is not a git repo."
+    BACKUP="${INSTALL_DIR}.bak.$(date +%s)"
+    info "Backing up to $BACKUP ..."
+    mv "$INSTALL_DIR" "$BACKUP"
+    log "Old directory moved to $BACKUP"
+    info "Cloning fresh copy..."
+    git clone --branch "$BRANCH" "$REPO_URL" "$INSTALL_DIR"
+    cd "$INSTALL_DIR"
+    log "Cloned to $INSTALL_DIR"
 else
     info "Cloning repository..."
     git clone --branch "$BRANCH" "$REPO_URL" "$INSTALL_DIR"
@@ -243,22 +253,33 @@ else
     warn "App returned HTTP $HTTP_CODE — may still be starting up"
 fi
 
+# ---- Install CLI tool ----
+info "Installing 'eve' CLI tool..."
+cp "$INSTALL_DIR/eve" /usr/local/bin/eve
+chmod +x /usr/local/bin/eve
+log "CLI tool installed: eve"
+
 # ---- Done ----
+SERVER_IP_OUT=$(curl -s https://api.ipify.org 2>/dev/null || echo 'YOUR_SERVER_IP')
 echo ""
 echo -e "${GREEN}╔══════════════════════════════════════════╗${NC}"
 echo -e "${GREEN}║        Installation Complete!            ║${NC}"
 echo -e "${GREEN}╚══════════════════════════════════════════╝${NC}"
 echo ""
-echo -e "  App:       ${CYAN}http://$(curl -s https://api.ipify.org 2>/dev/null || echo 'YOUR_SERVER_IP'):${APP_PORT}/${NC}"
-echo -e "  API Docs:  ${CYAN}http://$(curl -s https://api.ipify.org 2>/dev/null || echo 'YOUR_SERVER_IP'):${APP_PORT}/docs${NC}"
+echo -e "  App:       ${CYAN}http://${SERVER_IP_OUT}:${APP_PORT}/${NC}"
+echo -e "  API Docs:  ${CYAN}http://${SERVER_IP_OUT}:${APP_PORT}/docs${NC}"
 echo ""
 echo -e "  Config:    ${INSTALL_DIR}/.env"
-echo -e "  Logs:      cd ${INSTALL_DIR} && docker compose logs -f"
-echo -e "  Restart:   cd ${INSTALL_DIR} && docker compose restart"
-echo -e "  Update:    cd ${INSTALL_DIR} && git pull && docker compose up -d --build"
+echo ""
+echo "  CLI commands:"
+echo "    eve status    — view service status"
+echo "    eve logs      — view logs"
+echo "    eve update    — pull latest and rebuild"
+echo "    eve restart   — restart services"
+echo "    eve help      — show all commands"
 echo ""
 echo "  Next steps:"
 echo "  1. Open port ${APP_PORT} in your cloud firewall"
 echo "  2. Edit .env to configure EVE SSO (optional)"
-echo "  3. Set EVE SSO callback: http://YOUR_IP:${APP_PORT}/api/v1/auth/callback"
+echo "  3. Set EVE SSO callback: http://${SERVER_IP_OUT}:${APP_PORT}/api/v1/auth/callback"
 echo ""

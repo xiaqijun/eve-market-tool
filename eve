@@ -1,0 +1,193 @@
+#!/usr/bin/env bash
+# ============================================================
+# EVE Market Tool — CLI Management Tool
+# Installed to /usr/local/bin/eve
+# ============================================================
+
+set -euo pipefail
+
+INSTALL_DIR="/opt/eve-market-tool"
+COMPOSE="docker compose"
+
+# ---- Colors ----
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+NC='\033[0m'
+
+log()  { echo -e "${GREEN}[✓]${NC} $*"; }
+warn() { echo -e "${YELLOW}[!]${NC} $*"; }
+err()  { echo -e "${RED}[✗]${NC} $*"; exit 1; }
+info() { echo -e "${CYAN}[i]${NC} $*"; }
+
+# ---- Ensure we're in the right directory ----
+cd_project() {
+    if [ ! -f "$INSTALL_DIR/docker-compose.yml" ]; then
+        err "EVE Market Tool not found at $INSTALL_DIR"
+    fi
+    cd "$INSTALL_DIR"
+}
+
+# ---- Version helper ----
+get_version() {
+    grep 'version' pyproject.toml 2>/dev/null | head -1 | sed 's/.*"\(.*\)".*/\1/' || echo "unknown"
+}
+
+# ---- Commands ----
+
+cmd_start() {
+    cd_project
+    info "Starting services..."
+    $COMPOSE up -d
+    log "Services started"
+    $COMPOSE ps
+}
+
+cmd_stop() {
+    cd_project
+    info "Stopping services..."
+    $COMPOSE down
+    log "Services stopped"
+}
+
+cmd_restart() {
+    cd_project
+    info "Restarting services..."
+    $COMPOSE restart
+    log "Services restarted"
+    $COMPOSE ps
+}
+
+cmd_status() {
+    cd_project
+    echo ""
+    echo -e "${CYAN}EVE Market Tool v$(get_version)${NC}"
+    echo ""
+    $COMPOSE ps
+    echo ""
+
+    # Health check
+    APP_PORT=$(grep APP_PORT .env 2>/dev/null | cut -d= -f2 || echo "8000")
+    HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:${APP_PORT}/" 2>/dev/null || echo "000")
+    if [ "$HTTP_CODE" = "200" ]; then
+        echo -e "  Health: ${GREEN}OK${NC} (HTTP $HTTP_CODE)"
+    else
+        echo -e "  Health: ${RED}FAIL${NC} (HTTP $HTTP_CODE)"
+    fi
+
+    # DB check
+    if $COMPOSE exec -T db pg_isready -U eve_market &>/dev/null; then
+        echo -e "  DB:     ${GREEN}Connected${NC}"
+    else
+        echo -e "  DB:     ${RED}Not ready${NC}"
+    fi
+    echo ""
+}
+
+cmd_logs() {
+    cd_project
+    local service="${1:-}"
+    local lines="${2:-100}"
+    if [ -n "$service" ]; then
+        $COMPOSE logs -f --tail "$lines" "$service"
+    else
+        $COMPOSE logs -f --tail "$lines"
+    fi
+}
+
+cmd_update() {
+    cd_project
+
+    OLD_VER=$(get_version)
+    info "Current version: $OLD_VER"
+
+    info "Pulling latest code..."
+    git fetch origin main
+    git reset --hard origin/main
+    NEW_VER=$(get_version)
+    log "Updated: $OLD_VER → $NEW_VER"
+
+    info "Rebuilding containers..."
+    $COMPOSE build --pull
+    log "Images rebuilt"
+
+    info "Restarting services..."
+    $COMPOSE up -d
+    log "Services restarted"
+
+    info "Running migrations..."
+    $COMPOSE exec -T app alembic upgrade head 2>&1 || warn "Migration may need manual review"
+
+    echo ""
+    echo -e "${GREEN}Update complete: ${OLD_VER} → ${NEW_VER}${NC}"
+    echo ""
+}
+
+cmd_migrate() {
+    cd_project
+    info "Running database migrations..."
+    $COMPOSE exec -T app alembic upgrade head
+    log "Migrations complete"
+}
+
+cmd_shell() {
+    cd_project
+    info "Connecting to app container..."
+    $COMPOSE exec app /bin/bash
+}
+
+cmd_db() {
+    cd_project
+    info "Connecting to PostgreSQL..."
+    $COMPOSE exec db psql -U eve_market -d eve_market
+}
+
+cmd_build() {
+    cd_project
+    info "Building Docker images..."
+    $COMPOSE build --pull
+    log "Build complete"
+}
+
+cmd_help() {
+    echo ""
+    echo -e "${CYAN}EVE Market Tool — CLI Management${NC}"
+    echo ""
+    echo "Usage: eve <command>"
+    echo ""
+    echo "Commands:"
+    echo "  start       Start all services"
+    echo "  stop        Stop all services"
+    echo "  restart     Restart all services"
+    echo "  status      Show service status and health"
+    echo "  logs [svc]  View logs (optional: app, db)"
+    echo "  update      Pull latest code, rebuild, and migrate"
+    echo "  migrate     Run database migrations"
+    echo "  build       Rebuild Docker images"
+    echo "  shell       Open bash in app container"
+    echo "  db          Open PostgreSQL shell"
+    echo "  help        Show this help"
+    echo ""
+    echo "Examples:"
+    echo "  eve status"
+    echo "  eve logs app 50"
+    echo "  eve update"
+    echo ""
+}
+
+# ---- Main ----
+case "${1:-help}" in
+    start)    cmd_start ;;
+    stop)     cmd_stop ;;
+    restart)  cmd_restart ;;
+    status)   cmd_status ;;
+    logs)     cmd_logs "${2:-}" "${3:-100}" ;;
+    update)   cmd_update ;;
+    migrate)  cmd_migrate ;;
+    build)    cmd_build ;;
+    shell)    cmd_shell ;;
+    db)       cmd_db ;;
+    help|-h|--help) cmd_help ;;
+    *)        echo "Unknown command: $1"; cmd_help; exit 1 ;;
+esac
