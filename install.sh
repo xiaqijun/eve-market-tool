@@ -3,7 +3,7 @@
 # EVE Market Tool — One-Click Installer
 #
 # Download and run:
-#   curl -fsSL https://raw.githubusercontent.com/YOUR_USER/eve-market-tool/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/xiaqijun/eve-market-tool/main/install.sh | bash
 #
 # Or with custom settings:
 #   curl -fsSL .../install.sh | bash -s -- --port 9000 --dir /opt/eve
@@ -15,7 +15,7 @@ set -euo pipefail
 INSTALL_DIR="/opt/eve-market-tool"
 APP_PORT=8000
 DB_PORT=5432
-REPO_URL="https://github.com/YOUR_USER/eve-market-tool.git"
+REPO_URL="https://github.com/xiaqijun/eve-market-tool.git"
 BRANCH="main"
 
 # ---- Parse args ----
@@ -131,7 +131,7 @@ DB_PORT=${DB_PORT}
 APP_PORT=${APP_PORT}
 
 # ---- ESI API ----
-ESI_USER_AGENT=EVE-Market-Tool/1.0 (installer; +https://github.com/user/repo)
+ESI_USER_AGENT=EVE-Market-Tool/1.0 (installer; +https://github.com/xiaqijun/eve-market-tool)
 ESI_BASE_URL=https://esi.evetech.net/latest
 
 # ---- Security ----
