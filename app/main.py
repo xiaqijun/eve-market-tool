@@ -29,7 +29,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="EVE Market Tool",
         description="EVE Online Market Trading Management System",
-        version="0.1.0",
+        version="0.2.0",
         lifespan=lifespan,
     )
     app.include_router(api_v1_router)
